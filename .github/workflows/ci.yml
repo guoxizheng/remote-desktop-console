@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Python 语法检查
+        run: python -m py_compile server.py
+
+      - name: Shell 脚本语法检查
+        run: |
+          bash -n start.sh
+          bash -n setup_vendor.sh
+
+      - name: 检查前端文件
+        run: |
+          test -f web/index.html
+          test -f web/novnc/vnc.html
+          test -f web/novnc/app/ui.js
+
+      - name: 内联 JS 语法检查
+        run: |
+          python - <<'PY'
+          import re, pathlib
+          html = pathlib.Path("web/index.html").read_text(encoding="utf-8")
+          m = re.search(r"<script>(.*?)</script>", html, re.S)
+          assert m, "index.html 中未找到内联脚本"
+          pathlib.Path("/tmp/ui.js").write_text(m.group(1), encoding="utf-8")
+          print("extracted", len(m.group(1)), "chars")
+          PY
+          node --check /tmp/ui.js
