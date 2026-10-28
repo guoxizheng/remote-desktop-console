@@ -1,5 +1,5 @@
 # 运行时数据(含主机密码/日志/截图, 绝不入库)
-data/
+/data/
 
 # Python 缓存
 __pycache__/
@@ -7,7 +7,7 @@ __pycache__/
 *.pyo
 
 # 二进制组件, 由 setup_vendor.sh 下载
-vendor/
+/vendor/
 
 # 编辑器/系统杂项
 .vscode/

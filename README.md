@@ -10,6 +10,8 @@
 - 一键「连接桌面」:新标签页打开远程桌面,支持自适应缩放
 - **RDP 支持**:目标机跑 xrdp(或 GNOME RDP)时,一键把 RDP 会话转成
   浏览器可看的桌面(自带 FreeRDP 2.11.7 + KasmVNC 虚拟显示器,无需 root)
+- **内置 Web 终端**:浏览器里直接操作 NAS 命令行(xterm.js + PTY;
+  容器内无 PTY 时自动降级为管道模式)
 - 端口连通性测试(VNC / RDP)、活动连接与流量统计、运行日志
 - 可选访问令牌(`--token`),防止局域网内其他人随意使用
 
@@ -22,6 +24,8 @@ remote-desktop-console/
 ├── setup_vendor.sh  # 一次性下载 FreeRDP/x11vnc 二进制到 vendor/
 ├── web/
 │   ├── index.html   # 中文控制台页面
+│   ├── term.html    # Web 终端页面(xterm.js)
+│   ├── vendor/xterm # xterm.js 6.0 + 样式(随仓库)
 │   └── novnc/       # 内嵌 noVNC 前端(v1.3.0)
 ├── vendor/          # setup_vendor.sh 生成, 不入库
 │   ├── rdp/         # FreeRDP 2.11.7 客户端 + 库
@@ -79,7 +83,18 @@ tigervncserver -localhost no :1
 2. 点「测试」确认端口可达(分别显示 VNC / RDP 延迟)
 3. 点「**连接桌面**」(VNC)→ 新标签页自动打开远程桌面,输入 VNC 密码即可操作
 4. 需要 RDP 时:编辑主机补充 RDP 用户名/密码,点「**连接 RDP**」
-5. 关闭标签页即断开,「活动桥接」「RDP 会话」面板可实时查看状态与流量
+5. 点工具栏「**🖥️ 终端**」→ 新标签页打开 Web 终端,可执行 NAS 上的命令
+6. 关闭标签页即断开,「活动桥接」「RDP 会话」面板可实时查看状态与流量
+
+## Web 终端
+
+- 后端用 `pty` 拉起登录 shell,浏览器通过 xterm.js 渲染
+- 若运行环境禁用了 PTY(常见于容器),自动降级为**管道模式**:
+  支持普通命令(cd、ls、systemctl 等),不支持 vim/top 等全屏程序
+- 终端以运行本程序的用户身份执行,`sudo` 需自行配置权限
+- 关闭页面/断开即结束 shell 进程,不会残留
+- 不需要终端时:`RDC_NO_TERMINAL=1 ./start.sh restart` 禁用(或直接
+  `python3 server.py --no-terminal`)
 
 ## RDP 支持(已内置,无需 root)
 
@@ -129,6 +144,7 @@ NAS 端组件已随程序自带,无需 `sudo apt`:
 | FreeRDP 2.11.7 | vendor/rdp(setup_vendor.sh 下载) | Apache-2.0 |
 | x11vnc + libvncserver | vendor/vnc(setup_vendor.sh 下载) | GPL-2.0 |
 | noVNC 1.3.0 | web/novnc(随仓库) | MPL-2.0 |
+| xterm.js 6.0 | web/vendor/xterm(随仓库) | MIT |
 
 本仓库自身代码采用 **MIT** 许可,详见 [LICENSE](LICENSE)。
 
@@ -136,6 +152,8 @@ NAS 端组件已随程序自带,无需 `sudo apt`:
 
 - 默认监听 `0.0.0.0:8389`,局域网内任何设备都可访问,**仅建议用于可信局域网**
 - 建议加令牌启动:`RDC_TOKEN=你的密码 ./start.sh start`
+- ⚠️ **Web 终端 = 一个可执行命令的 shell**:未设令牌时局域网内任何人都能拿到
+  NAS 上的命令行;务必设置令牌,或 `RDC_NO_TERMINAL=1` 直接禁用
 - VNC 密码会保存在 `data/hosts.json`(用于自动填入),请勿把该目录暴露到公网
 - VNC 认证在浏览器与目标机之间完成,服务端只做字节转发
 - 如需公网访问,请配合 WireGuard / Tailscale 等 VPN 使用,不要直接暴露端口

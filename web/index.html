@@ -71,6 +71,7 @@ pre{background:#0b111c;border:1px solid var(--line);border-radius:8px;
   <div class="toolbar">
     <button class="primary" id="btnAdd">＋ 添加主机</button>
     <button id="btnRefresh">刷新</button>
+    <button id="btnTerm">🖥️ 终端</button>
     <span class="hint" id="hintRdp"></span>
   </div>
 
@@ -335,6 +336,10 @@ async function loadLogs(){
 $('btnAdd').onclick = () => { hideForm(); $('form').classList.remove('hidden'); $('f_ip').focus(); };
 $('btnCancel').onclick = hideForm;
 $('btnRefresh').onclick = () => { load(); loadLogs(); toast('已刷新'); };
+$('btnTerm').onclick = () => {
+  const q = TOKEN ? '?token=' + encodeURIComponent(TOKEN) : '';
+  window.open('/term.html' + q, '_blank');
+};
 
 load();
 loadLogs();

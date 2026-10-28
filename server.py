@@ -9,16 +9,20 @@
 
 import argparse
 import base64
+import fcntl
 import hashlib
 import json
 import mimetypes
 import os
+import pty
 import re
+import select
 import shutil
 import signal
 import socket
 import struct
 import subprocess
+import termios
 import threading
 import time
 import uuid
@@ -32,7 +36,7 @@ WEB_DIR = BASE / "web"
 DATA_DIR = BASE / "data"
 HOSTS_FILE = DATA_DIR / "hosts.json"
 
-CFG = {"port": 8389, "bind": "0.0.0.0", "token": None}
+CFG = {"port": 8389, "bind": "0.0.0.0", "token": None, "terminal": True}
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
 # ---------------------------------------------------------------- 日志
@@ -518,6 +522,8 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path.startswith("/ws/vnc/"):
             return self._handle_ws(path)
+        if path == "/ws/term":
+            return self._handle_term()
         if path.startswith("/api/"):
             if not self._token_ok():
                 return self._need_token()
@@ -690,6 +696,177 @@ class Handler(BaseHTTPRequestHandler):
         self.close_connection = True
         relay_ws(self.connection, tcp, info)
 
+    # ---------- 终端 (PTY + WebSocket) ----------
+
+    def _handle_term(self):
+        if not self._token_ok():
+            return self._send_error_json("访问需要令牌", 401)
+        if not CFG.get("terminal", True):
+            return self._send_error_json("终端功能已禁用 (--no-terminal)", 403)
+        key = self.headers.get("Sec-WebSocket-Key")
+        if not key or "websocket" not in (self.headers.get("Upgrade") or "").lower():
+            return self._send_error_json("需要 WebSocket 升级", 400)
+        home = DATA_DIR / "home"
+        (home / ".config").mkdir(parents=True, exist_ok=True)
+        env = dict(os.environ)
+        env.update({"HOME": str(home), "TERM": "xterm-256color",
+                    "XDG_CONFIG_HOME": str(home / ".config"),
+                    "PS1": "\\u@\\h:\\w\\$ "})
+        shell = os.environ.get("SHELL") or "/bin/bash"
+        master = None
+        mode = "pty"
+        proc = None
+        try:
+            try:
+                master, slave = pty.openpty()
+                fcntl.ioctl(slave, termios.TIOCSWINSZ,
+                            struct.pack("HHHH", 30, 100, 0, 0))
+                proc = subprocess.Popen([shell, "-l"], stdin=slave,
+                                        stdout=slave, stderr=slave,
+                                        cwd=str(home), env=env,
+                                        preexec_fn=os.setsid)
+                os.close(slave)
+            except OSError as e:
+                # 容器常禁用 PTY, 退化为管道模式(前端本地回显)
+                if master is not None:
+                    try:
+                        os.close(master)
+                    except Exception:
+                        pass
+                    master = None
+                log("PTY 不可用 (%s), 使用管道模式" % e)
+                mode = "pipe"
+                proc = subprocess.Popen([shell, "-i"], stdin=subprocess.PIPE,
+                                        stdout=subprocess.PIPE,
+                                        stderr=subprocess.STDOUT,
+                                        cwd=str(home), env=env,
+                                        preexec_fn=os.setsid)
+        except Exception as e:
+            log("终端启动失败: %s" % e)
+            return self._send_error_json("终端启动失败: %s" % e, 500)
+        resp = ("HTTP/1.1 101 Switching Protocols\r\n"
+                "Upgrade: websocket\r\n"
+                "Connection: Upgrade\r\n"
+                "Sec-WebSocket-Accept: %s\r\n\r\n") % ws_accept(key)
+        self.wfile.write(resp.encode())
+        self.wfile.flush()
+        self._code = 101
+        self.close_connection = True
+        log("终端会话开始: pid %s (%s, %s 模式)" % (proc.pid, shell, mode))
+        sock = self.connection
+        closed = {"v": False}
+        try:
+            ws_send_frame(sock, json.dumps({"mode": mode}).encode(), 0x1)
+        except Exception:
+            pass
+
+        def reader():
+            try:
+                while not closed["v"]:
+                    if mode == "pty":
+                        try:
+                            r, _, _ = select.select([master], [], [], 0.2)
+                        except (OSError, ValueError):
+                            break
+                        if not r:
+                            if proc.poll() is not None:
+                                break
+                            continue
+                        try:
+                            data = os.read(master, 65536)
+                        except OSError:
+                            break
+                    else:
+                        try:
+                            data = os.read(proc.stdout.fileno(), 65536)
+                        except (OSError, ValueError):
+                            break
+                    if not data:
+                        break
+                    ws_send_frame(sock, data, 0x2)
+            except Exception:
+                pass
+            finally:
+                try:
+                    sock.shutdown(socket.SHUT_RDWR)
+                except Exception:
+                    pass
+
+        t = threading.Thread(target=reader, daemon=True)
+        t.start()
+        try:
+            while True:
+                r = ws_read_frame(sock, [None, bytearray()])
+                if r is None:
+                    break
+                op, data = r
+                if op == 0x8:
+                    break
+                if op == 0x1:
+                    try:
+                        msg = json.loads(data.decode("utf-8", "replace"))
+                        if msg.get("cols") and msg.get("rows") and mode == "pty":
+                            fcntl.ioctl(master, termios.TIOCSWINSZ,
+                                        struct.pack("HHHH",
+                                                    int(msg["rows"]),
+                                                    int(msg["cols"]), 0, 0))
+                    except Exception:
+                        pass
+                    continue
+                if mode == "pipe" and data == b"\x03":
+                    try:
+                        os.killpg(os.getpgid(proc.pid), signal.SIGINT)
+                    except Exception:
+                        pass
+                    continue
+                if mode == "pty":
+                    os.write(master, data)
+                else:
+                    try:
+                        proc.stdin.write(data)
+                        proc.stdin.flush()
+                    except (BrokenPipeError, ValueError):
+                        break
+        except Exception:
+            pass
+        finally:
+            closed["v"] = True
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+            except Exception:
+                try:
+                    proc.terminate()
+                except Exception:
+                    pass
+            try:
+                proc.wait(timeout=3)
+            except Exception:
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                except Exception:
+                    pass
+            if master is not None:
+                try:
+                    os.close(master)
+                except Exception:
+                    pass
+            if mode == "pipe":
+                try:
+                    if proc.stdin:
+                        proc.stdin.close()
+                except Exception:
+                    pass
+                try:
+                    if proc.stdout:
+                        proc.stdout.close()
+                except Exception:
+                    pass
+            try:
+                sock.close()
+            except Exception:
+                pass
+            log("终端会话结束: pid %s" % proc.pid)
+
     # ---------- 静态文件 ----------
 
     def _serve_static(self, path):
@@ -742,8 +919,11 @@ def main():
     ap.add_argument("--port", type=int, default=8389)
     ap.add_argument("--bind", default="0.0.0.0")
     ap.add_argument("--token", default=None, help="访问令牌 (可选)")
+    ap.add_argument("--no-terminal", action="store_true",
+                    help="禁用 Web 终端")
     a = ap.parse_args()
     CFG["port"], CFG["bind"], CFG["token"] = a.port, a.bind, a.token
+    CFG["terminal"] = not a.no_terminal
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     _cleanup_stale_rdp()
 

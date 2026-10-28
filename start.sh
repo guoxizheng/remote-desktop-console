@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # 局域网远程桌面控制台 管理脚本
 # 用法: ./start.sh [start|stop|restart|status|logs]
-# 可选环境变量: RDC_PORT=8389  RDC_TOKEN=你的令牌
+# 可选环境变量: RDC_PORT=8389  RDC_TOKEN=你的令牌  RDC_NO_TERMINAL=1(禁用终端)
 set -u
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PIDFILE="$DIR/data/server.pid"
 PORT="${RDC_PORT:-8389}"
 TOKEN="${RDC_TOKEN:-}"
+EXTRA=""
+[ -n "${RDC_NO_TERMINAL:-}" ] && EXTRA="--no-terminal"
 
 start() {
   if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
@@ -16,9 +18,9 @@ start() {
   fi
   mkdir -p "$DIR/data"
   if [ -n "$TOKEN" ]; then
-    nohup python3 "$DIR/server.py" --port "$PORT" --token "$TOKEN" >> "$DIR/data/server.log" 2>&1 &
+    nohup python3 "$DIR/server.py" --port "$PORT" --token "$TOKEN" $EXTRA >> "$DIR/data/server.log" 2>&1 &
   else
-    nohup python3 "$DIR/server.py" --port "$PORT" >> "$DIR/data/server.log" 2>&1 &
+    nohup python3 "$DIR/server.py" --port "$PORT" $EXTRA >> "$DIR/data/server.log" 2>&1 &
   fi
   echo $! > "$PIDFILE"
   sleep 1
