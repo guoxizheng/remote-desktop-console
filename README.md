@@ -63,11 +63,15 @@ http://<NAS的局域网IP>:8389
 
 ## 飞牛 fnOS 安装包 (.fpk)
 
-已在 `fnos/` 下提供打包工程,可生成飞牛应用中心可安装的 `.fpk`:
+**直接安装**:仓库已附带构建好的安装包,下载后到飞牛「应用中心 → 右上角手动安装」即可:
+
+- [`release/remote-desktop-console-1.0.0.fpk`](release/remote-desktop-console-1.0.0.fpk)(约 3.5 MB,已内置 RDP/VNC 组件)
+
+自行构建:在 `fnos/` 下执行,首次会自动下载 fnpack:
 
 ```bash
 cd fnos
-./build.sh        # 首次会自动下载 fnpack, 输出 remote-desktop-console-<版本>.fpk
+./build.sh        # 输出 remote-desktop-console-<版本>.fpk
 ```
 
 安装:飞牛 fnOS → 应用中心 → 右上角「手动安装」→ 选择 `.fpk`。
