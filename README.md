@@ -1,5 +1,7 @@
 # 局域网远程桌面控制台 (LAN Remote Desktop Console)
 
+[![CI](https://github.com/guoxizheng/remote-desktop-console/actions/workflows/ci.yml/badge.svg)](https://github.com/guoxizheng/remote-desktop-console/actions/workflows/ci.yml)
+
 在 NAS 上运行一个轻量 Web 服务,用浏览器直接操作局域网内 Ubuntu 的图形桌面。
 纯 Python 标准库实现,**零依赖**(无需 apt 安装任何包)。
 
