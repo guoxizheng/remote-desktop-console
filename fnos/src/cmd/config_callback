@@ -1,0 +1,6 @@
+#!/bin/bash
+# 配置变更后：重启服务
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+"${DIR}/main" stop
+"${DIR}/main" start
+exit 0

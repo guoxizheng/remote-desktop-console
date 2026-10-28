@@ -1,0 +1,16 @@
+appname               = remote-desktop-console
+version               = 1.0.0
+display_name          = 远程桌面控制台
+desc                  = 局域网远程桌面控制台：浏览器里管理 VNC/RDP 主机、一键打开远程桌面，内置 Web 终端。纯 Python 标准库实现，无需 root。
+platform              = x86
+source                = thirdparty
+maintainer            = rdc
+maintainer_url        = https://github.com/
+distributor           = rdc
+distributor_url       = https://github.com/
+desktop_uidir         = ui
+desktop_applaunchname = remote-desktop-console.main
+service_port          = 8389
+checkport             = true
+ctl_stop              = true
+changelog             = 1.0.0 初始版本：远程桌面（VNC/RDP 桥接）+ Web 终端

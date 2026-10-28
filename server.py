@@ -921,8 +921,14 @@ def main():
     ap.add_argument("--token", default=None, help="访问令牌 (可选)")
     ap.add_argument("--no-terminal", action="store_true",
                     help="禁用 Web 终端")
+    ap.add_argument("--data-dir", default=None,
+                    help="数据目录 (默认 ./data, 安装到 fnOS 时指向应用数据目录)")
     a = ap.parse_args()
     CFG["port"], CFG["bind"], CFG["token"] = a.port, a.bind, a.token
+    if a.data_dir:
+        global DATA_DIR, HOSTS_FILE
+        DATA_DIR = Path(a.data_dir).resolve()
+        HOSTS_FILE = DATA_DIR / "hosts.json"
     CFG["terminal"] = not a.no_terminal
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     _cleanup_stale_rdp()

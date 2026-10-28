@@ -1,0 +1,4 @@
+#!/bin/bash
+# 卸载后：清理运行文件（保留用户数据目录，由系统管理）
+rm -f "${TRIM_PKGVAR}/app.pid" 2>/dev/null
+exit 0

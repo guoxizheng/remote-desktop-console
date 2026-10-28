@@ -1,0 +1,16 @@
+#!/bin/bash
+# 安装前检查：python3 是否可用
+for bin in python3; do
+    if ! command -v "$bin" >/dev/null 2>&1; then
+        echo "缺少 ${bin}，无法运行本应用" > "$TRIM_TEMP_LOGFILE"
+        exit 1
+    fi
+done
+
+if ! python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)' 2>/dev/null; then
+    echo "需要 Python 3.8 或更高版本" > "$TRIM_TEMP_LOGFILE"
+    exit 1
+fi
+
+mkdir -p "${TRIM_PKGVAR}" 2>/dev/null
+exit 0

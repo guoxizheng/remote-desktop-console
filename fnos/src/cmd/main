@@ -1,0 +1,110 @@
+#!/bin/bash
+# 远程桌面控制台 运行控制
+LOG_FILE="${TRIM_PKGVAR}/info.log"
+PID_FILE="${TRIM_PKGVAR}/app.pid"
+APP_DIR="${TRIM_APPDEST}"
+DATA_DIR="${TRIM_PKGVAR}"
+PORT="${TRIM_SERVICE_PORT:-8389}"
+
+log_msg() {
+    mkdir -p "${DATA_DIR}" 2>/dev/null
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${LOG_FILE}"
+}
+
+check_process() {
+    [ -n "$1" ] && kill -0 "$1" 2>/dev/null
+}
+
+status() {
+    if [ -f "${PID_FILE}" ]; then
+        pid=$(head -n 1 "${PID_FILE}" 2>/dev/null | tr -d '[:space:]')
+        if check_process "${pid}"; then
+            return 0
+        fi
+        rm -f "${PID_FILE}"
+    fi
+    return 1
+}
+
+start_process() {
+    status && return 0
+
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo "缺少 python3，无法启动应用" > "${TRIM_TEMP_LOGFILE}"
+        return 1
+    fi
+
+    mkdir -p "${DATA_DIR}"
+    log_msg "starting: dir=${APP_DIR} port=${PORT} data=${DATA_DIR}"
+
+    cd "${APP_DIR}" || {
+        echo "应用目录不存在: ${APP_DIR}" > "${TRIM_TEMP_LOGFILE}"
+        return 1
+    }
+
+    HOME="${DATA_DIR}/home" \
+    nohup python3 "${APP_DIR}/server.py" \
+        --port "${PORT}" \
+        --data-dir "${DATA_DIR}" \
+        --bind 0.0.0.0 \
+        >> "${LOG_FILE}" 2>&1 &
+
+    echo $! > "${PID_FILE}"
+    sleep 2
+
+    if ! status; then
+        log_msg "start failed"
+        echo "服务启动失败，请查看应用日志 info.log" > "${TRIM_TEMP_LOGFILE}"
+        rm -f "${PID_FILE}"
+        return 1
+    fi
+
+    log_msg "started pid=$(cat "${PID_FILE}")"
+    return 0
+}
+
+stop_process() {
+    if status; then
+        pid=$(cat "${PID_FILE}")
+        log_msg "stopping pid=${pid}"
+        kill -TERM "${pid}" 2>/dev/null
+        for _ in $(seq 1 15); do
+            check_process "${pid}" || break
+            sleep 1
+        done
+        if check_process "${pid}"; then
+            log_msg "kill -KILL ${pid}"
+            kill -KILL "${pid}" 2>/dev/null
+        fi
+    fi
+    rm -f "${PID_FILE}"
+
+    # 清理 RDP 桥接可能残留的子进程
+    pkill -f "${APP_DIR}/vendor/vnc/usr/bin/x11vnc" 2>/dev/null
+    pkill -f "${APP_DIR}/vendor/rdp/usr/bin/xfreerdp" 2>/dev/null
+    pkill -f "Xvnc .* -noWebsocket" 2>/dev/null
+
+    log_msg "stopped"
+    return 0
+}
+
+case "$1" in
+    start)
+        start_process
+        exit $?
+        ;;
+    stop)
+        stop_process
+        exit 0
+        ;;
+    status)
+        if status; then
+            exit 0
+        else
+            exit 3
+        fi
+        ;;
+    *)
+        exit 1
+        ;;
+esac

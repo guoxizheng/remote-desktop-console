@@ -59,6 +59,22 @@ python3 server.py --port 8389
 http://<NAS的局域网IP>:8389
 ```
 
+## 飞牛 fnOS 安装包 (.fpk)
+
+已在 `fnos/` 下提供打包工程,可生成飞牛应用中心可安装的 `.fpk`:
+
+```bash
+cd fnos
+./build.sh        # 首次会自动下载 fnpack, 输出 remote-desktop-console-<版本>.fpk
+```
+
+安装:飞牛 fnOS → 应用中心 → 右上角「手动安装」→ 选择 `.fpk`。
+
+安装后应用中心出现「远程桌面控制台」,桌面入口打开 `http://<NAS_IP>:8389`;
+数据保存在 `/vol{n}/@appdata/remote-desktop-console`(hosts.json、日志)。
+
+详见 [fnos/README.md](fnos/README.md)。
+
 ## 目标 Ubuntu 端设置(必须)
 
 被控那台 Ubuntu 需要开启远程桌面(GNOME 自带,Ubuntu 22.04+):

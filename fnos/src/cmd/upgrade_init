@@ -1,0 +1,5 @@
+#!/bin/bash
+# 升级前：停止服务
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+"${DIR}/main" stop
+exit 0
