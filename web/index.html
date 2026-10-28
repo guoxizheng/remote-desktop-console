@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>局域网远程桌面控制台</title>
+<style>
+:root{
+  --bg:#0f141e; --card:#171e2c; --line:#273248; --tx:#e6ecf7;
+  --sub:#8b9bb4; --acc:#3d8bfd; --ok:#2fbf71; --warn:#e0a13a; --err:#e5534b;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);
+  font:14px/1.6 "PingFang SC","Microsoft YaHei",system-ui,sans-serif}
+header{display:flex;align-items:center;gap:14px;padding:16px 26px;
+  background:var(--card);border-bottom:1px solid var(--line)}
+header h1{font-size:17px;margin:0;font-weight:600}
+header .spacer{flex:1}
+header .pill{font-size:12px;padding:3px 10px;border-radius:20px;
+  border:1px solid var(--line);color:var(--sub)}
+main{max-width:980px;margin:0 auto;padding:22px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;
+  padding:16px;margin-bottom:16px}
+.toolbar{display:flex;gap:10px;align-items:center;margin-bottom:14px}
+button{background:#1e293f;color:var(--tx);border:1px solid var(--line);
+  border-radius:8px;padding:7px 14px;font-size:13px;cursor:pointer}
+button:hover{border-color:var(--acc)}
+button.primary{background:var(--acc);border-color:var(--acc);color:#fff}
+button.danger{color:#ff8a80;border-color:#5a2a2a}
+button.warn{color:#e0a13a;border-color:#5a4a2a}
+button.small{padding:3px 8px;font-size:12px}
+.hidden{display:none!important}
+.host{display:flex;align-items:center;gap:14px;padding:12px 14px;
+  border:1px solid var(--line);border-radius:10px;margin-bottom:10px;
+  background:#121a28}
+.host .dot{width:9px;height:9px;border-radius:50%;background:#55617a;flex:none}
+.host .dot.on{background:var(--ok);box-shadow:0 0 6px var(--ok)}
+.host .dot.off{background:var(--err)}
+.host .name{font-weight:600;min-width:120px}
+.host .addr{color:var(--sub);font-family:ui-monospace,Consolas,monospace;
+  font-size:13px;flex:1}
+.host .actions{display:flex;gap:8px}
+.host .msg{font-size:12px;color:var(--sub);min-width:90px;text-align:right}
+.form{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.form input{background:#0d1420;border:1px solid var(--line);border-radius:8px;
+  color:var(--tx);padding:8px 10px;font-size:13px;outline:none}
+.form input:focus{border-color:var(--acc)}
+.form .full{grid-column:1/-1}
+.form .foot{grid-column:1/-1;display:flex;gap:10px;justify-content:flex-end}
+.act{font-size:12px;color:var(--sub);padding:4px 0}
+pre{background:#0b111c;border:1px solid var(--line);border-radius:8px;
+  padding:12px;font-size:12px;line-height:1.5;max-height:260px;overflow:auto;
+  color:#a9b7cf}
+.hint{color:var(--warn);font-size:12px}
+#toast{position:fixed;right:22px;bottom:22px;display:flex;
+  flex-direction:column;gap:8px;z-index:50}
+.toast{background:#1d2839;border:1px solid var(--line);border-left:3px solid var(--acc);
+  padding:9px 14px;border-radius:8px;font-size:13px;max-width:340px}
+.toast.err{border-left-color:var(--err)}
+</style>
+</head>
+<body>
+<header>
+  <h1>🖥️ 局域网远程桌面控制台</h1>
+  <div class="spacer"></div>
+  <span class="pill" id="pillToken">令牌: 未启用</span>
+  <span class="pill" id="pillTools">组件检测中…</span>
+</header>
+
+<main>
+  <div class="toolbar">
+    <button class="primary" id="btnAdd">＋ 添加主机</button>
+    <button id="btnRefresh">刷新</button>
+    <span class="hint" id="hintRdp"></span>
+  </div>
+
+  <form class="card form hidden" id="form" onsubmit="return saveHost(event)">
+    <input id="f_name" placeholder="主机名称(可选), 如: 客厅 Ubuntu">
+    <input id="f_ip" placeholder="IP 地址, 如 192.168.1.10">
+    <input id="f_vncp" type="number" placeholder="VNC 端口 (默认 5900)" value="5900">
+    <input id="f_rdpp" type="number" placeholder="RDP 端口 (默认 3389)" value="3389">
+    <input id="f_vpwd" type="password" placeholder="VNC 密码(可选, 连接时自动填入)">
+    <input id="f_rdpu" placeholder="RDP 用户名(可选)">
+    <input id="f_rpwd" type="password" placeholder="RDP 密码(启用 RDP 桥接时必填)">
+    <div class="foot">
+      <button type="button" id="btnCancel">取消</button>
+      <button type="submit" class="primary" id="btnSave">保存</button>
+    </div>
+  </form>
+
+  <div id="hosts"></div>
+
+  <div class="card">
+    <h2 style="font-size:14px;margin:0 0 10px">活动桥接</h2>
+    <div id="active" class="act">暂无活动连接</div>
+  </div>
+
+  <div class="card">
+    <h2 style="font-size:14px;margin:0 0 10px">RDP 会话</h2>
+    <div id="rdpsess" class="act">暂无 RDP 会话</div>
+  </div>
+
+  <div class="card">
+    <details>
+      <summary style="cursor:pointer">运行日志</summary>
+      <pre id="logs">加载中…</pre>
+    </details>
+  </div>
+</main>
+<div id="toast"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+let TOKEN = localStorage.getItem('rdc_token') || '';
+let HOSTS = [];
+let RDPS = [];
+let editing = null;
+
+function esc(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+function toast(msg, err){
+  const d = document.createElement('div');
+  d.className = 'toast' + (err ? ' err' : '');
+  d.textContent = msg;
+  $('toast').appendChild(d);
+  setTimeout(()=>d.remove(), 4000);
+}
+
+function askToken(){
+  const t = prompt('请输入访问令牌 (--token 启动参数):', TOKEN);
+  if (t !== null) {
+    TOKEN = t.trim();
+    localStorage.setItem('rdc_token', TOKEN);
+    if (TOKEN) document.cookie = 'rdc_token=' + TOKEN + '; path=/';
+  }
+}
+
+async function api(path, opts){
+  const u = new URL(path, location.origin);
+  if (TOKEN) u.searchParams.set('token', TOKEN);
+  const r = await fetch(u, opts || {});
+  if (r.status === 401) { askToken(); throw new Error('需要访问令牌'); }
+  let j = null;
+  try { j = await r.json(); } catch(e) {}
+  if (!j || j.ok === false) throw new Error((j && j.error) || ('HTTP ' + r.status));
+  return j;
+}
+
+async function load(){
+  try {
+    const [st, hs] = await Promise.all([api('/api/status'), api('/api/hosts')]);
+    $('pillToken').textContent = st.token_set ? '令牌: 已启用' : '令牌: 未启用';
+    const miss = Object.keys(st.tools).filter(k => k !== 'rdp_ready' && !st.tools[k]);
+    $('pillTools').textContent = st.tools.rdp_ready ? 'RDP 组件: 齐全' : 'RDP 组件: 缺失';
+    $('hintRdp').textContent = st.tools.rdp_ready ? '' :
+      'NAS 缺少 RDP 组件(' + miss.join(', ') + '), 当前仅支持 VNC 直连。';
+    HOSTS = hs.hosts || [];
+    RDPS = st.rdp_sessions || [];
+    renderHosts();
+    renderActive(st.active || []);
+    renderRdp();
+  } catch(e) { console.warn(e); }
+}
+
+function renderHosts(){
+  const box = $('hosts');
+  if (!HOSTS.length){
+    box.innerHTML = '<div class="card" style="color:var(--sub)">还没有主机, 点上方「添加主机」开始。</div>';
+    return;
+  }
+  box.innerHTML = HOSTS.map(h => {
+    const sess = RDPS.find(s => s.host_id === h.id);
+    const rdpBtn = sess
+      ? `<button class="warn" onclick="stopRdp('${h.id}')">停止 RDP</button>`
+      : `<button onclick="connectRdp('${h.id}')">连接 RDP</button>`;
+    return `
+    <div class="host">
+      <span class="dot" id="dot-${h.id}"></span>
+      <span class="name" title="${esc(h.name)}">${esc(h.name)}</span>
+      <span class="addr">${esc(h.ip)} · VNC:${h.vnc_port} · RDP:${h.rdp_port}</span>
+      <span class="msg" id="msg-${h.id}"></span>
+      <span class="actions">
+        <button onclick="testHost('${h.id}')">测试</button>
+        <button class="primary" onclick="connectHost('${h.id}')">连接桌面</button>
+        ${rdpBtn}
+        <button onclick="editHost('${h.id}')">编辑</button>
+        <button class="danger" onclick="delHost('${h.id}')">删除</button>
+      </span>
+    </div>`; }).join('');
+}
+
+function renderActive(list){
+  const box = $('active');
+  if (!list.length){ box.textContent = '暂无活动连接'; return; }
+  box.innerHTML = list.map(a =>
+    `● ${esc(a.name)} → ${esc(a.target)}:${a.target_port} · 已连接 ${a.elapsed}s · 下行 ${(a.tx/1024).toFixed(0)}KB / 上行 ${(a.rx/1024).toFixed(0)}KB`
+  ).join('<br>');
+}
+
+function renderRdp(){
+  const box = $('rdpsess');
+  if (!RDPS.length){ box.textContent = '暂无 RDP 会话'; return; }
+  box.innerHTML = RDPS.map(s =>
+    `● ${esc(s.name)} → Xvnc :${s.display} (端口 ${s.vnc_port}) · 运行 ${s.elapsed}s · ` +
+    (s.alive ? '正常' : '<span class="hint">进程已退出</span>') +
+    ` <button class="small" onclick="stopRdp('${s.host_id}')">停止</button>`
+  ).join('<br>');
+}
+
+
+async function testHost(id){
+  const msg = $('msg-' + id);
+  msg.textContent = '测试中…';
+  try {
+    const r = await api('/api/hosts/' + id + '/test', {method:'POST'});
+    const t = r.test;
+    msg.textContent = (t.vnc.ok ? 'VNC ' + t.vnc.ms + 'ms' : 'VNC 不通') +
+                      ' · ' + (t.rdp.ok ? 'RDP ' + t.rdp.ms + 'ms' : 'RDP 不通');
+    $('dot-' + id).className = 'dot ' + (t.vnc.ok ? 'on' : 'off');
+  } catch(e) { msg.textContent = '测试失败'; toast(e.message, true); }
+}
+
+function connectHost(id){
+  const h = HOSTS.find(x => x.id === id);
+  if (!h) return;
+  const q = 'path=' + encodeURIComponent('ws/vnc/' + id) +
+            '&autoconnect=true&resize=scale';
+  let url = '/novnc/vnc.html?' + q;
+  if (h.vnc_password) url += '#password=' + encodeURIComponent(h.vnc_password);
+  window.open(url, '_blank');
+}
+
+async function connectRdp(id){
+  const h = HOSTS.find(x => x.id === id);
+  if (!h) return;
+  if (!h.rdp_user || !h.rdp_password) {
+    toast('请先点「编辑」填写该主机的 RDP 用户名和密码', true);
+    return;
+  }
+  const msg = $('msg-' + id);
+  msg.textContent = 'RDP 启动中…';
+  try {
+    const r = await api('/api/hosts/' + id + '/rdp/start', {method:'POST'});
+    msg.textContent = 'RDP 就绪 (:X' + r.display + ')';
+    toast('RDP 会话已启动, 正在打开桌面…');
+    const q = 'path=' + encodeURIComponent('ws/vnc/' + id) +
+              '&autoconnect=true&resize=scale';
+    window.open('/novnc/vnc.html?' + q, '_blank');
+    await load();
+  } catch(e) {
+    msg.textContent = 'RDP 启动失败';
+    toast(e.message, true);
+  }
+}
+
+async function stopRdp(id){
+  try {
+    await api('/api/hosts/' + id + '/rdp/stop', {method:'POST'});
+    toast('RDP 会话已停止');
+    await load();
+  } catch(e) { toast(e.message, true); }
+}
+
+function editHost(id){
+  const h = HOSTS.find(x => x.id === id);
+  if (!h) return;
+  editing = id;
+  $('f_name').value = h.name || '';
+  $('f_ip').value = h.ip || '';
+  $('f_vncp').value = h.vnc_port || 5900;
+  $('f_rdpp').value = h.rdp_port || 3389;
+  $('f_vpwd').value = h.vnc_password || '';
+  $('f_rdpu').value = h.rdp_user || '';
+  $('f_rpwd').value = h.rdp_password || '';
+  $('btnSave').textContent = '保存修改';
+  $('form').classList.remove('hidden');
+  $('f_ip').focus();
+}
+
+async function delHost(id){
+  const h = HOSTS.find(x => x.id === id);
+  if (!h || !confirm('确定删除主机「' + h.name + '」?')) return;
+  try {
+    await api('/api/hosts/' + id, {method:'DELETE'});
+    toast('已删除');
+    await load();
+  } catch(e) { toast(e.message, true); }
+}
+
+async function saveHost(ev){
+  ev.preventDefault();
+  const body = {
+    name: $('f_name').value.trim(),
+    ip: $('f_ip').value.trim(),
+    vnc_port: parseInt($('f_vncp').value, 10) || 5900,
+    rdp_port: parseInt($('f_rdpp').value, 10) || 3389,
+    vnc_password: $('f_vpwd').value,
+    rdp_user: $('f_rdpu').value.trim(),
+    rdp_password: $('f_rpwd').value,
+  };
+  if (!body.ip) { toast('请填写 IP 地址', true); return false; }
+  const opts = {method:'POST', headers:{'Content-Type':'application/json'},
+                body: JSON.stringify(body)};
+  try {
+    if (editing) {
+      await api('/api/hosts/' + editing, {method:'PUT', headers:opts.headers, body:opts.body});
+      toast('已更新');
+    } else {
+      await api('/api/hosts', opts);
+      toast('已添加');
+    }
+    hideForm();
+    await load();
+  } catch(e) { toast(e.message, true); }
+  return false;
+}
+
+function hideForm(){
+  editing = null;
+  $('form').classList.add('hidden');
+  $('f_name').value = ''; $('f_ip').value = '';
+  $('f_vncp').value = 5900; $('f_rdpp').value = 3389;
+  $('f_vpwd').value = ''; $('f_rdpu').value = '';
+  $('f_rpwd').value = '';
+  $('btnSave').textContent = '保存';
+}
+
+async function loadLogs(){
+  try {
+    const r = await api('/api/logs');
+    $('logs').textContent = (r.logs || []).slice(-80).join('\n') || '(空)';
+  } catch(e) {}
+}
+
+$('btnAdd').onclick = () => { hideForm(); $('form').classList.remove('hidden'); $('f_ip').focus(); };
+$('btnCancel').onclick = hideForm;
+$('btnRefresh').onclick = () => { load(); loadLogs(); toast('已刷新'); };
+
+load();
+loadLogs();
+setInterval(load, 5000);
+setInterval(loadLogs, 5000);
+</script>
+</body>
+</html>
